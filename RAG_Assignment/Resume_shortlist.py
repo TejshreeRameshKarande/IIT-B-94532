@@ -4,42 +4,36 @@ import chromadb
 from datetime import datetime
 
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.embeddings import init_embeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
-# EMBEDDING MODEL
-
-embed_model = init_embeddings(
-    model="huggingface:sentence-transformers/all-MiniLM-L6-v2"
+# ================= EMBEDDING MODEL =================
+embed_model = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2"
 )
 
-# CHROMA DB
+# ================= CHROMA DB =================
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
 collection = chroma_client.get_or_create_collection("resumes")
 
-# PDF LOADER
+# ================= PDF LOADER =================
 def load_pdf_resume(pdf_path):
     loader = PyPDFLoader(pdf_path)
     docs = loader.load()
 
-    text = ""
-    for page in docs:
-        text += page.page_content
+    text = " ".join(page.page_content for page in docs)
 
     metadata = {
         "source": os.path.basename(pdf_path),
         "pages": len(docs),
         "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
-
     return text, metadata
 
-# STREAMLIT UI
-
+# ================= STREAMLIT UI =================
 st.set_page_config(page_title="📄 Resume RAG", layout="wide")
 st.title("📄 Resume Shortlisting using RAG")
 
-#  UPLOAD RESUMES
-
+# ================= UPLOAD RESUMES =================
 st.header("1️⃣ Upload Resume PDFs")
 
 files = st.file_uploader(
@@ -50,7 +44,7 @@ files = st.file_uploader(
 
 if files:
     for file in files:
-        temp_path = f"./temp_{file.name}"
+        temp_path = f"temp_{file.name}"
 
         with open(temp_path, "wb") as f:
             f.write(file.read())
@@ -69,7 +63,7 @@ if files:
 
     st.success("✅ Resumes uploaded and indexed")
 
-# JOB DESCRIPTION SEARCH
+# ================= JOB DESCRIPTION =================
 st.header("2️⃣ Job Description")
 
 jd = st.text_area("Paste job description", height=180)
@@ -86,19 +80,15 @@ if st.button("🔍 Shortlist") and jd:
     st.subheader("📊 Shortlisted Resumes")
 
     for i, (doc, meta) in enumerate(
-        zip(results["documents"][0], results["metadatas"][0]),
-        start=1
+        zip(results["documents"][0], results["metadatas"][0]), start=1
     ):
-        st.markdown(f"### #{i} {meta.get('source', 'Unknown')}")
+        st.markdown(f"### #{i} {meta['source']}")
         st.caption(
-            f"Pages: {meta.get('pages', 'N/A')} | "
-            f"Uploaded: {meta.get('uploaded_at', 'Not Available')}"
+            f"Pages: {meta['pages']} | Uploaded: {meta['uploaded_at']}"
         )
         st.write(doc[:500] + " ...")
 
-
-# 3️⃣ LIST ALL RESUMES 
-
+# ================= LIST ALL RESUMES =================
 st.header("3️⃣ List All Resumes")
 
 data = collection.get()
@@ -106,31 +96,27 @@ data = collection.get()
 if not data["ids"]:
     st.info("No resumes available")
 else:
-    resume_map = {}
-
-    for doc, meta in zip(data["documents"], data["metadatas"]):
-        name = meta.get("source", "Unknown")
-        resume_map[name] = doc
+    resume_map = {
+        meta["source"]: doc
+        for doc, meta in zip(data["documents"], data["metadatas"])
+    }
 
     selected_resume = st.radio(
         "📌 Select a resume to view",
-        options=list(resume_map.keys())
+        list(resume_map.keys())
     )
 
-    st.subheader(f"📄 Resume Content: {selected_resume}")
     st.text_area(
-        "Content",
+        "Resume Content",
         resume_map[selected_resume],
         height=400
     )
 
+# ================= DELETE RESUME =================
 st.header("4️⃣ Delete Resume")
 
 if data["ids"]:
-    to_delete = st.selectbox(
-        "Select resume to delete",
-        options=data["ids"]
-    )
+    to_delete = st.selectbox("Select resume to delete", data["ids"])
 
     if st.button("🗑️ Delete Selected Resume"):
         collection.delete(ids=[to_delete])
